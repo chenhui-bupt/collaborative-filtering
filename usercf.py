@@ -1,178 +1,96 @@
 #-*- coding: utf-8 -*-
 '''
-Created on 2015-06-22
+Created on 2017-12-23
 
-@author: Lockvictor
+@author: chenhui
 '''
 import sys, random, math
 from operator import itemgetter
+from cf import CF
 
 
 random.seed(0)
 
 
-class UserBasedCF():
+class UserBasedCF(CF):
     ''' TopN recommendation - UserBasedCF '''
     def __init__(self):
-        self.trainset = {}
-        self.testset = {}
-
+        super().__init__()
         self.n_sim_user = 20
-        self.n_rec_movie = 10
-
-        self.user_sim_mat = {}
-        self.movie_popular = {}
-        self.movie_count = 0
-
-        print >> sys.stderr, 'Similar user number = %d' % self.n_sim_user
-        print >> sys.stderr, 'recommended movie number = %d' % self.n_rec_movie
-
-
-    @staticmethod
-    def loadfile(filename):
-        ''' load a file, return a generator. '''
-        fp = open(filename, 'r')
-        for i,line in enumerate(fp):
-            yield line.strip('\r\n')
-            if i%100000 == 0:
-                print >> sys.stderr, 'loading %s(%s)' % (filename, i)
-        fp.close()
-        print >> sys.stderr, 'load %s succ' % filename
-
-
-    def generate_dataset(self, filename, pivot=0.7):
-        ''' load rating data and split it to training set and test set '''
-        trainset_len = 0
-        testset_len = 0
-
-        for line in self.loadfile(filename):
-            user, movie, rating, timestamp = line.split('::')
-            # split the data by pivot
-            if (random.random() < pivot):
-                self.trainset.setdefault(user,{})
-                self.trainset[user][movie] = int(rating)
-                trainset_len += 1
-            else:
-                self.testset.setdefault(user,{})
-                self.testset[user][movie] = int(rating)
-                testset_len += 1
-
-        print >> sys.stderr, 'split training set and test set succ'
-        print >> sys.stderr, 'train set = %s' % trainset_len
-        print >> sys.stderr, 'test set = %s' % testset_len
+        self.n_rec_item = 10
+        print('Similar user number = %d' % self.n_sim_user)
+        print('recommended item number = %d' % self.n_rec_item)
 
 
     def calc_user_sim(self):
         ''' calculate user similarity matrix '''
         # build inverse table for item-users
-        # key=movieID, value=list of userIDs who have seen this movie
-        print >> sys.stderr, 'building movie-users inverse table...'
-        movie2users = dict()
+        # key=itemID, value=list of userIDs who have seen this item
+        print('building item-users inverse table...')
+        item2users = dict()
 
-        for user,movies in self.trainset.iteritems():
-            for movie in movies:
+        for user,items in self.trainset.items():
+            for item in items:
                 # inverse table for item-users
-                if movie not in movie2users:
-                    movie2users[movie] = set()
-                movie2users[movie].add(user)
+                if item not in item2users:
+                    item2users[item] = set()
+                item2users[item].add(user)
                 # count item popularity at the same time
-                if movie not in self.movie_popular:
-                    self.movie_popular[movie] = 0
-                self.movie_popular[movie] += 1
-        print >> sys.stderr, 'build movie-users inverse table succ'
+                if item not in self.item_popular:
+                    self.item_popular[item] = 0
+                self.item_popular[item] += 1
+        print('build item-users inverse table succ')
 
-        # save the total movie number, which will be used in evaluation
-        self.movie_count = len(movie2users)
-        print >> sys.stderr, 'total movie number = %d' % self.movie_count
+        # save the total item number, which will be used in evaluation
+        self.item_count = len(item2users)
+        print('total item number = %d' % self.item_count)
 
         # count co-rated items between users
         usersim_mat = self.user_sim_mat
-        print >> sys.stderr, 'building user co-rated movies matrix...'
+        print('building user co-rated items matrix...')
 
-        for movie,users in movie2users.iteritems():
+        for item,users in item2users.items():
             for u in users:
                 for v in users:
                     if u == v: continue
                     usersim_mat.setdefault(u,{})
                     usersim_mat[u].setdefault(v,0)
                     usersim_mat[u][v] += 1
-        print >> sys.stderr, 'build user co-rated movies matrix succ'
+        print('build user co-rated items matrix succ')
 
         # calculate similarity matrix 
-        print >> sys.stderr, 'calculating user similarity matrix...'
+        print('calculating user similarity matrix...')
         simfactor_count = 0
         PRINT_STEP = 2000000
-        for u,related_users in usersim_mat.iteritems():
-            for v,count in related_users.iteritems():
+        for u,related_users in usersim_mat.items():
+            for v,count in related_users.items():
                 usersim_mat[u][v] = count / math.sqrt(
                         len(self.trainset[u]) * len(self.trainset[v]))
                 simfactor_count += 1
                 if simfactor_count % PRINT_STEP == 0:
-                    print >> sys.stderr, 'calculating user similarity factor(%d)' % simfactor_count
+                    print('calculating user similarity factor(%d)' % simfactor_count)
 
-        print >> sys.stderr, 'calculate user similarity matrix(similarity factor) succ'
-        print >> sys.stderr, 'Total similarity factor number = %d' %simfactor_count
+        print('calculate user similarity matrix(similarity factor) succ')
+        print('Total similarity factor number = %d' %simfactor_count)
 
 
     def recommend(self, user):
-        ''' Find K similar users and recommend N movies. '''
+        ''' Find K similar users and recommend N items. '''
         K = self.n_sim_user
-        N = self.n_rec_movie
+        N = self.n_rec_item
         rank = dict()
-        watched_movies = self.trainset[user]
+        watched_items = self.trainset[user]
 
         # v=similar user, wuv=similarity factor
         for v, wuv in sorted(self.user_sim_mat[user].items(),
                 key=itemgetter(1), reverse=True)[0:K]:
-            for movie in self.trainset[v]:
-                if movie in watched_movies:
+            for item in self.trainset[v]:
+                if item in watched_items:
                     continue
-                # predict the user's "interest" for each movie
-                rank.setdefault(movie,0)
-                rank[movie] += wuv
-        # return the N best movies
+                # predict the user's "interest" for each item
+                rank.setdefault(item,0)
+                rank[item] += wuv
+        # return the N best items
         return sorted(rank.items(), key=itemgetter(1), reverse=True)[0:N]
 
 
-    def evaluate(self):
-        ''' return precision, recall, coverage and popularity '''
-        print >> sys.stderr, 'Evaluation start...'
-
-        N = self.n_rec_movie
-        #  varables for precision and recall 
-        hit = 0
-        rec_count = 0
-        test_count = 0
-        # varables for coverage
-        all_rec_movies = set()
-        # varables for popularity
-        popular_sum = 0
-
-        for i, user in enumerate(self.trainset):
-            if i % 500 == 0:
-                print >> sys.stderr, 'recommended for $d users' % i
-            test_movies = self.testset.get(user, {})
-            rec_movies = self.recommend(user)
-            for movie, w in rec_movies:
-                if movie in test_movies:
-                    hit += 1
-                all_rec_movies.add(movie)
-                popular_sum += math.log(1 + self.movie_popular[movie])
-            rec_count += N
-            test_count += len(test_movies)
-
-        precision = hit / (1.0*rec_count)
-        recall = hit / (1.0*test_count)
-        coverage = len(all_rec_movies) / (1.0*self.movie_count)
-        popularity = popular_sum / (1.0*rec_count)
-
-        print >> sys.stderr, 'precision=%.4f\trecall=%.4f\tcoverage=%.4f\tpopularity=%.4f' % \
-                (precision, recall, coverage, popularity)
-
-
-if __name__ == '__main__':
-    ratingfile = 'ml-1m/ratings.dat'
-    usercf = UserBasedCF()
-    usercf.generate_dataset(ratingfile)
-    usercf.calc_user_sim()
-    usercf.evaluate()
