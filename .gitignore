@@ -61,3 +61,5 @@ ml-1m/
 
 # run log
 log/
+# pyspark
+notebooks/metastore_db/
