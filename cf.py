@@ -6,7 +6,7 @@ import numpy as np
 random.seed(0)
 
 
-class CF():
+class CF(object):
     def __init__(self):
         self.trainset = {}
         self.testset = {}
